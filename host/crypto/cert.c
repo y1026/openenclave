@@ -16,7 +16,9 @@
 #include <openssl/x509.h>
 #include <openssl/x509_vfy.h>
 #include <openssl/x509v3.h>
+#if !defined(_WIN32)
 #include <pthread.h>
+#endif
 #include <stdio.h>
 #include <string.h>
 #include "crl.h"

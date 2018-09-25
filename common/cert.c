@@ -101,6 +101,7 @@ oe_result_t oe_get_crl_distribution_points(
     size_t size = 0;
     size_t offset = 0;
     static const char _OID[] = "2.5.29.31";
+    uint8_t* extension_data = NULL;
 
     if (urls)
         *urls = NULL;
@@ -124,19 +125,21 @@ oe_result_t oe_get_crl_distribution_points(
 
     /* Find all the CRL distribution points in this extension */
     {
-        uint8_t data[size];
         oe_asn1_t asn1;
         size_t urls_bytes;
 
+        extension_data = (uint8_t*)malloc(size);
+        if (extension_data == NULL)
+            OE_RAISE(OE_OUT_OF_MEMORY);
+
         /* Find the extension */
-        size = sizeof(data);
-        OE_CHECK(oe_cert_find_extension(cert, _OID, data, &size));
+        OE_CHECK(oe_cert_find_extension(cert, _OID, extension_data, &size));
 
         /* Determine the number of URLs */
         {
             oe_asn1_t seq;
 
-            oe_asn1_init(&asn1, data, size);
+            oe_asn1_init(&asn1, extension_data, size);
             OE_CHECK(oe_asn1_get_sequence(&asn1, &seq));
 
             while (oe_asn1_more(&seq))
@@ -161,7 +164,7 @@ oe_result_t oe_get_crl_distribution_points(
         {
             oe_asn1_t seq;
 
-            oe_asn1_init(&asn1, data, size);
+            oe_asn1_init(&asn1, extension_data, size);
             OE_CHECK(oe_asn1_get_sequence(&asn1, &seq));
 
             /* While there are more CRL distribution points */
@@ -202,5 +205,8 @@ oe_result_t oe_get_crl_distribution_points(
     result = OE_OK;
 
 done:
+    if (extension_data != NULL)
+        free(extension_data);
+
     return result;
 }

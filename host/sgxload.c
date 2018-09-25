@@ -724,7 +724,7 @@ oe_result_t oe_sgx_initialize_enclave(
 
         /* Ask the OS to initialize the enclave */
         DWORD enclave_error;
-        ENCLAVE_INIT_INFO_SGX info = {{0}};
+        ENCLAVE_INIT_INFO_SGX info = {0};
 
         OE_CHECK(
             oe_memcpy_s(
@@ -737,7 +737,7 @@ oe_result_t oe_sgx_initialize_enclave(
                 &info.EInitToken,
                 sizeof(info.EInitToken),
                 (void*)&launch_token,
-                sizeof(launch_token)));
+                sizeof(info.EInitToken)));
 
         if (!InitializeEnclave(
                 GetCurrentProcess(),
