@@ -240,8 +240,6 @@ done:
         goto done;
     }
 
-    result = base;
-
 done:
 
     return result;
