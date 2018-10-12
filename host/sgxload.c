@@ -491,7 +491,7 @@ done:
     //  free enclave  memory
     if (result != OE_OK && context->type == OE_SGX_LOAD_TYPE_CREATE &&
         base != NULL)
-        _sgx_free_enclave_memory(base, enclaveSize);
+        _sgx_free_enclave_memory(base, enclave_size);
 
     if (secs)
         oe_memalign_free(secs);
