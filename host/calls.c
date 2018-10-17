@@ -838,6 +838,7 @@ oe_result_t oe_call_enclave_function(
         args.input_buffer_size = input_buffer_size;
         args.output_buffer = output_buffer;
         args.output_buffer_size = output_buffer_size;
+        args.output_bytes_written = 0;
         args.result = OE_UNEXPECTED;
     }
 
@@ -857,6 +858,7 @@ oe_result_t oe_call_enclave_function(
     /* Check the result */
     OE_CHECK(args.result);
 
+    *output_bytes_written = args.output_bytes_written;
     result = OE_OK;
 
 done:

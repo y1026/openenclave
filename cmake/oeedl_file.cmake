@@ -37,7 +37,8 @@ function(oeedl_file EDL_FILE TYPE OUT_FILES_VAR)
 
 	add_custom_command(
 		OUTPUT ${h_file} ${c_file}
-		DEPENDS ${EDL_FILE} oeedger8r
+		DEPENDS ${EDL_FILE}
+		DEPENDS oeedger8r
 		COMMAND ${OE_BINDIR}/oeedger8r ${type_opt} ${dir_opt} ${CMAKE_CURRENT_BINARY_DIR} ${EDL_FILE}
 		WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
 		)

@@ -26,7 +26,11 @@ OE_EXTERNC_BEGIN
 /**
  * The type of a function in ecall function table
  */
-typedef void (*oe_ecall_func_t)(void*);
+typedef void (*oe_ecall_func_t)(uint8_t* input_buffer,
+                                size_t input_buffer_size,
+                                uint8_t* output_buffer,
+                                size_t output_buffer_size,
+                                size_t* output_bytes_writter);
 
 /**
  * Perform a high-level host function call (OCALL).
@@ -67,9 +71,9 @@ oe_result_t oe_call_host_function(
  * For hand-written enclaves, that use the older calling mechanism, define empty
  * ecall tables.
  */
-#define OE_DEFINE_EMPTY_ECALL_TABLE()                            \
-    OE_EXPORT_CONST oe_ecall_func_t _oe_ecalls_table[] = {NULL}; \
-    OE_EXPORT_CONST size_t _oe_ecalls_table_size = 0
+#define OE_DEFINE_EMPTY_ECALL_TABLE()                             \
+    OE_EXPORT_CONST oe_ecall_func_t __oe_ecalls_table[] = {NULL}; \
+    OE_EXPORT_CONST size_t __oe_ecalls_table_size = 0
 
 /**
  * Check that the given buffer lies in host memory.
@@ -151,6 +155,48 @@ oe_result_t oe_call_host_function(
         if (host_ptr)                                           \
             memcpy(enc_ptr, host_ptr, size);                    \
     } while (0)
+
+/**
+ * Add a size value, rounding to sizeof(void*).
+ */
+OE_INLINE oe_result_t oe_add_size(size_t* total, size_t size)
+{
+    oe_result_t result = OE_FAILURE;
+    size_t align = sizeof(void*);
+    size_t sum = 0;
+
+    // Round size to multiple of sizeof(void*)
+    size_t rsize = ((size + align - 1) / align) * align;
+    if (rsize <  size)
+    {
+        result = OE_INTEGER_OVERFLOW;
+        goto done;
+    }
+
+    // Add rounded-size and check for overlow.
+    sum = *total + rsize;
+    if (sum < *total)
+    {
+        result = OE_INTEGER_OVERFLOW;
+        goto done;
+    }
+
+    *total = sum;
+    result = OE_OK;
+
+done:
+    return result;    
+}
+
+#define OE_ADD_SIZE(total, size)                   \
+    do                                             \
+    {                                              \
+        if (oe_add_size(&total, size) != OE_OK)    \
+        {                                          \
+            __result = OE_INTEGER_OVERFLOW;        \
+            goto done;                             \
+        }                                          \
+    } while(0)
 
 // Define oe_lfence for Spectre mitigation in x686-64 platforms.
 #if __x86_64__ || _M_X64

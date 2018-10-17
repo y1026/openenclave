@@ -63,4 +63,47 @@ oe_result_t oe_call_enclave_function(
     size_t output_buffer_size,
     size_t* output_bytes_written);
 
+
+/**
+ * Add a size value, rounding to sizeof(void*).
+ */
+OE_INLINE oe_result_t oe_add_size(size_t* total, size_t size)
+{
+    oe_result_t result = OE_FAILURE;
+    size_t align = sizeof(void*);
+    size_t sum = 0;
+
+    // Round size to multiple of sizeof(void*)
+    size_t rsize = ((size + align - 1) / align) * align;
+    if (rsize <  size)
+    {
+        result = OE_INTEGER_OVERFLOW;
+        goto done;
+    }
+
+    // Add rounded-size and check for overlow.
+    sum = *total + rsize;
+    if (sum < *total)
+    {
+        result = OE_INTEGER_OVERFLOW;
+        goto done;
+    }
+
+    *total = sum;
+    result = OE_OK;
+
+done:
+    return result;    
+}
+
+#define OE_ADD_SIZE(total, size)                   \
+    do                                             \
+    {                                              \
+        if (oe_add_size(&total, size) != OE_OK)    \
+        {                                          \
+            __result = OE_INTEGER_OVERFLOW;        \
+            goto done;                             \
+        }                                          \
+    } while(0)
+
 #endif // _OE_EDGER8R_HOST_H
