@@ -63,6 +63,9 @@ oe_result_t oe_call_enclave_function(
     size_t output_buffer_size,
     size_t* output_bytes_written);
 
+/******************************************************************************/
+/********* Macros and inline functions used by generated code *****************/
+/******************************************************************************/
 
 /**
  * Add a size value, rounding to sizeof(void*).
@@ -75,7 +78,7 @@ OE_INLINE oe_result_t oe_add_size(size_t* total, size_t size)
 
     // Round size to multiple of sizeof(void*)
     size_t rsize = ((size + align - 1) / align) * align;
-    if (rsize <  size)
+    if (rsize < size)
     {
         result = OE_INTEGER_OVERFLOW;
         goto done;
@@ -93,17 +96,43 @@ OE_INLINE oe_result_t oe_add_size(size_t* total, size_t size)
     result = OE_OK;
 
 done:
-    return result;    
+    return result;
 }
 
-#define OE_ADD_SIZE(total, size)                   \
-    do                                             \
-    {                                              \
-        if (oe_add_size(&total, size) != OE_OK)    \
-        {                                          \
-            __result = OE_INTEGER_OVERFLOW;        \
-            goto done;                             \
-        }                                          \
-    } while(0)
+#define OE_ADD_SIZE(total, size)                \
+    do                                          \
+    {                                           \
+        if (oe_add_size(&total, size) != OE_OK) \
+        {                                       \
+            _result = OE_INTEGER_OVERFLOW;      \
+            goto done;                          \
+        }                                       \
+    } while (0)
+
+/**
+ * Copy an input parameter to input buffer.
+ */
+#define OE_WRITE_IN_PARAM(argname, size)                                   \
+    if (argname)                                                           \
+    {                                                                      \
+        *(uint8_t**)&_args.argname = _input_buffer + _input_buffer_offset; \
+        memcpy(_args.argname, argname, (size_t)(size));                    \
+        OE_ADD_SIZE(_input_buffer_offset, (size_t)(size));                 \
+    }
+
+#define OE_WRITE_IN_OUT_PARAM OE_WRITE_IN_PARAM
+
+/**
+ * Read an output parameter from output buffer.
+ */
+#define OE_READ_OUT_PARAM(argname, size)                                      \
+    if (argname)                                                              \
+    {                                                                         \
+        memcpy(                                                               \
+            argname, _output_buffer + _output_buffer_offset, (size_t)(size)); \
+        OE_ADD_SIZE(_output_buffer_offset, (size_t)(size));                   \
+    }
+
+#define OE_READ_IN_OUT_PARAM OE_READ_OUT_PARAM
 
 #endif // _OE_EDGER8R_HOST_H

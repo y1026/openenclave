@@ -26,11 +26,12 @@ OE_EXTERNC_BEGIN
 /**
  * The type of a function in ecall function table
  */
-typedef void (*oe_ecall_func_t)(uint8_t* input_buffer,
-                                size_t input_buffer_size,
-                                uint8_t* output_buffer,
-                                size_t output_buffer_size,
-                                size_t* output_bytes_writter);
+typedef void (*oe_ecall_func_t)(
+    uint8_t* input_buffer,
+    size_t input_buffer_size,
+    uint8_t* output_buffer,
+    size_t output_buffer_size,
+    size_t* output_bytes_writter);
 
 /**
  * Perform a high-level host function call (OCALL).
@@ -74,6 +75,10 @@ oe_result_t oe_call_host_function(
 #define OE_DEFINE_EMPTY_ECALL_TABLE()                             \
     OE_EXPORT_CONST oe_ecall_func_t __oe_ecalls_table[] = {NULL}; \
     OE_EXPORT_CONST size_t __oe_ecalls_table_size = 0
+
+/******************************************************************************/
+/********* Macros and inline functions used by generated code *****************/
+/******************************************************************************/
 
 /**
  * Check that the given buffer lies in host memory.
@@ -167,7 +172,7 @@ OE_INLINE oe_result_t oe_add_size(size_t* total, size_t size)
 
     // Round size to multiple of sizeof(void*)
     size_t rsize = ((size + align - 1) / align) * align;
-    if (rsize <  size)
+    if (rsize < size)
     {
         result = OE_INTEGER_OVERFLOW;
         goto done;
@@ -185,20 +190,77 @@ OE_INLINE oe_result_t oe_add_size(size_t* total, size_t size)
     result = OE_OK;
 
 done:
-    return result;    
+    return result;
 }
 
-#define OE_ADD_SIZE(total, size)                   \
-    do                                             \
-    {                                              \
-        if (oe_add_size(&total, size) != OE_OK)    \
-        {                                          \
-            __result = OE_INTEGER_OVERFLOW;        \
-            goto done;                             \
-        }                                          \
-    } while(0)
+#define OE_ADD_SIZE(total, size)                \
+    do                                          \
+    {                                           \
+        if (oe_add_size(&total, size) != OE_OK) \
+        {                                       \
+            result = OE_INTEGER_OVERFLOW;       \
+            goto done;                          \
+        }                                       \
+    } while (0)
 
-// Define oe_lfence for Spectre mitigation in x686-64 platforms.
+/**
+ * Compute and set the pointer value for the given parameter within the input
+ * buffer. Make sure that the buffer has enough space.
+ */
+#define OE_ECALL_SET_IN_POINTER(argname, argsize)                            \
+    if (pargs_in->argname)                                                   \
+    {                                                                        \
+        if ((input_buffer + input_buffer_offset + (size_t)(argsize)) >       \
+            (input_buffer + input_buffer_size))                              \
+        {                                                                    \
+            result = OE_BUFFER_TOO_SMALL;                                    \
+            goto done;                                                       \
+        }                                                                    \
+        *(uint8_t**)&pargs_in->argname = input_buffer + input_buffer_offset; \
+        OE_ADD_SIZE(input_buffer_offset, (size_t)(argsize));                 \
+    }
+
+#define OE_ECALL_SET_IN_OUT_POINTER OE_ECALL_SET_IN_POINTER
+
+/**
+ * Compute and set the pointer value for the given parameter within the output
+ * buffer. Make sure that the buffer has enough space.
+ */
+#define OE_ECALL_SET_OUT_POINTER(argname, argsize)                             \
+    if (pargs_in->argname)                                                     \
+    {                                                                          \
+        if ((output_buffer + output_buffer_offset + (size_t)(argsize)) >       \
+            (output_buffer + output_buffer_size))                              \
+        {                                                                      \
+            result = OE_BUFFER_TOO_SMALL;                                      \
+            goto done;                                                         \
+        }                                                                      \
+        *(uint8_t**)&pargs_in->argname = output_buffer + output_buffer_offset; \
+        OE_ADD_SIZE(output_buffer_offset, (size_t)(argsize));                  \
+    }
+
+/**
+ * Compute and set the pointer value for the given parameter within the output
+ * buffer. Make sure that the buffer has enough space.
+ * Also copy the contents of the corresponding in-out pointer in the input
+ * buffer.
+ */
+#define OE_ECALL_COPY_AND_SET_IN_OUT_POINTER(argname, argsize)                 \
+    if (pargs_in->argname)                                                     \
+    {                                                                          \
+        if ((output_buffer + output_buffer_offset + (size_t)(argsize)) >       \
+            (output_buffer + output_buffer_size))                              \
+        {                                                                      \
+            result = OE_BUFFER_TOO_SMALL;                                      \
+            goto done;                                                         \
+        }                                                                      \
+        memcpy(                                                                \
+            output_buffer + output_buffer_offset, pargs_in->argname, argsize); \
+        *(uint8_t**)&pargs_in->argname = output_buffer + output_buffer_offset; \
+        OE_ADD_SIZE(output_buffer_offset, (size_t)argsize);                    \
+    }
+
+// Define oe_lfence for Spectre mitigation in x86-64 platforms.
 #if __x86_64__ || _M_X64
 
 // x86_64 processor.

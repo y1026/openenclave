@@ -264,12 +264,12 @@ static oe_result_t _handle_call_enclave_function(uint64_t arg_in)
     uint8_t* buffer = NULL;
     uint8_t* input_buffer = NULL;
     uint8_t* output_buffer = NULL;
-    size_t buffer_size = 0;    
+    size_t buffer_size = 0;
     size_t output_bytes_written = 0;
 
     // Ensure that args lies outside the enclave.
     if (!oe_is_outside_enclave((void*)arg_in, sizeof(oe_call_enclave_args_t)))
-        OE_RAISE(OE_INVALID_PARAMETER);    
+        OE_RAISE(OE_INVALID_PARAMETER);
 
     // Copy args to enclave memory to avoid TOCTOU issues.
     args_ptr = (oe_call_enclave_function_args_t*)arg_in;
@@ -288,9 +288,11 @@ static oe_result_t _handle_call_enclave_function(uint64_t arg_in)
     if (func == NULL)
         OE_RAISE(OE_NOT_FOUND);
 
-    OE_CHECK(oe_safe_add_u64(args.input_buffer_size, args.output_buffer_size, &buffer_size));     
-    
-    // Buffer sizes must be pointer aligned.    
+    OE_CHECK(
+        oe_safe_add_u64(
+            args.input_buffer_size, args.output_buffer_size, &buffer_size));
+
+    // Buffer sizes must be pointer aligned.
     if (buffer_size % sizeof(void*) != 0)
         OE_RAISE(OE_INVALID_PARAMETER);
 
@@ -301,14 +303,20 @@ static oe_result_t _handle_call_enclave_function(uint64_t arg_in)
 
     // Copy input buffer to enclave buffer.
     oe_memcpy(input_buffer, args.input_buffer, args.input_buffer_size);
-    
+
     // Clear out output buffer.
-    // This ensures reproducible behavior if say the function is reading from output buffer.
+    // This ensures reproducible behavior if say the function is reading from
+    // output buffer.
     output_buffer = buffer + args.input_buffer_size;
     oe_memset(output_buffer, 0, args.output_buffer_size);
 
     // Call the function.
-    func(input_buffer, args.input_buffer_size, output_buffer, args.output_buffer_size, &output_bytes_written);
+    func(
+        input_buffer,
+        args.input_buffer_size,
+        output_buffer,
+        args.output_buffer_size,
+        &output_bytes_written);
 
     // Copy outputs to host memory.
     oe_memcpy(args.output_buffer, output_buffer, output_bytes_written);
