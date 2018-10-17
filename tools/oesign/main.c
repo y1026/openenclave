@@ -13,6 +13,7 @@
 #include "../host/enclave.h"
 
 static const char* arg0;
+void oedump(const char*, const char*, const char*);
 
 OE_PRINTF_FORMAT(1, 2)
 void Err(const char* format, ...)
@@ -523,7 +524,17 @@ static const char _usage[] =
     "        -----BEGIN RSA PRIVATE KEY-----\n"
     "\n"
     "    The resulting image is written to <EnclaveImage>.signed.so.\n"
-    "\n";
+    "\n"
+    "	   		---- OR-----\n"
+    "\n"
+    "Usage: %s EnclaveImage --oedump\n"
+    "\n"
+    "Where:\n"
+    "    EnclaveImage -- path of an enclave image file\n"
+    "\n"
+    "Description:\n"
+    "    This option dumps the oeinfo and signature information of an "
+    "enclave\n";
 
 int main(int argc, const char* argv[])
 {
@@ -533,6 +544,7 @@ int main(int argc, const char* argv[])
     const char* enclave;
     const char* conffile;
     const char* keyfile;
+    const char* arg;
     oe_enclave_t enc;
     void* pem_data = NULL;
     size_t pem_size;
@@ -541,13 +553,25 @@ int main(int argc, const char* argv[])
     oe_sgx_load_context_t context;
 
     /* Check arguments */
-    if (argc != 4)
+    if (argc > 4 || argc < 3)
     {
-        fprintf(stderr, _usage, arg0);
+        fprintf(stderr, _usage, arg0, arg0);
         exit(1);
     }
 
-    /* Collect arguments */
+    /* Check for --oedump option and dump oeinfo and signature information */
+    if (argc == 3)
+    {
+        /* Collect arguments for dump */
+        enclave = argv[1];
+        arg = argv[2];
+
+        /* dump oeinfo and signature information */
+        oedump(arg0, enclave, arg);
+        exit(1);
+    }
+
+    /* Collect arguments for signing*/
     enclave = argv[1];
     conffile = argv[2];
     keyfile = argv[3];
