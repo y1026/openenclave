@@ -1,6 +1,7 @@
 # Copyright (c) Microsoft Corporation. All rights reserved.
 # Licensed under the MIT License.
 
+if (UNIX)
 # Copy mbedtls sources to replace config.h and build w/ own flags
 
 set(MBEDTLS_WRAP_CFLAGS "-nostdinc -I${OE_INCDIR}/openenclave/libc -fPIC -fno-builtin-udivti3 ${SPECTRE_MITIGATION_FLAGS}")
@@ -60,3 +61,7 @@ target_link_libraries(mbedcrypto INTERFACE
 target_link_libraries(mbedcrypto INTERFACE
 	${OE_LIBDIR}/openenclave/enclave/liboelibc.a
 	${OE_LIBDIR}/openenclave/enclave/liboecore.a)
+endif ()
+
+# Mbedtls library for host use
+add_subdirectory(mbedtls)

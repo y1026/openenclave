@@ -13,6 +13,7 @@ set(PLATFORM_SRC
     crypto/key.c
     crypto/random.c
     crypto/rsa.c
+	crypto/linux/rsa.c
     linux/aep.S
     linux/aesm.c
     linux/cpuid.c
@@ -21,12 +22,12 @@ set(PLATFORM_SRC
     linux/exception.c
     linux/hostthread.c
     linux/sgxioctl.c
-    linux/sgxsign.c
     linux/time.c
     sgxquoteprovider.c
     )
 elseif (WIN32)
 set(PLATFORM_SRC
+	crypto/windows/rsa.c
     windows/aep.asm
     windows/aesm.c
     windows/cpuid.c
@@ -34,7 +35,6 @@ set(PLATFORM_SRC
     windows/entersim.asm
     windows/exception.c
     windows/hostthread.c
-    windows/sgxsign.c
     windows/time.c
     )
 endif()
@@ -67,6 +67,7 @@ add_library(oehost STATIC
     sgxload.c
     sgxmeasure.c
     sgxquote.c
+    sgxsign.c
     sgxtypes.c
     signkey.c
     strings.c
@@ -86,9 +87,9 @@ find_package(Threads REQUIRED)
 
 # linking also requires a number of libs on the host
 if(UNIX)
-target_link_libraries(oehost PRIVATE ${CRYPTO_LIB} ${DL_LIB} Threads::Threads)
+target_link_libraries(oehost PRIVATE ${CRYPTO_LIB} ${DL_LIB} Threads::Threads mbedcrypto)
 elseif(WIN32)
-target_link_libraries(oehost PRIVATE bcrypt)
+target_link_libraries(oehost PRIVATE bcrypt mbedcrypto Crypt32)
 endif()
 
 if(UNIX)
@@ -114,6 +115,8 @@ endif()
 if(USE_DEBUG_MALLOC)
 target_compile_definitions(oehost PRIVATE OE_USE_DEBUG_MALLOC)
 endif()
+
+target_include_directories(oehost PRIVATE ${CMAKE_SOURCE_DIR}/3rdparty/mbedtls/mbedtls/include)
 
 # convenience library for creating a host-app (that needs the -rdynamic link flag)
 add_library(oehostapp INTERFACE)
