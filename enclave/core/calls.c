@@ -324,6 +324,8 @@ static oe_result_t _handle_call_enclave_function(uint64_t arg_in)
     // The ecall succeeded.
     args_ptr->output_bytes_written = output_bytes_written;
     args_ptr->result = OE_OK;
+    result = OE_OK;
+
 done:
     if (buffer)
         oe_free(buffer);
@@ -719,6 +721,7 @@ oe_result_t oe_call_host_function(
     /* Check the result */
     OE_CHECK(args->result);
 
+    *output_bytes_written = args->output_bytes_written;
     result = OE_OK;
 
 done:

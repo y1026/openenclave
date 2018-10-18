@@ -361,7 +361,7 @@ let oe_prepare_input_buffer (os:out_channel) (fd:Ast.func_decl) (alloc_func:stri
   fprintf os "    /* Allocate marshaling buffer */\n";
   fprintf os "    _total_buffer_size = _input_buffer_size;\n";
   fprintf os "    OE_ADD_SIZE(_total_buffer_size, _output_buffer_size);\n\n";
-  fprintf os "    _buffer = %s(_total_buffer_size);\n" alloc_func;
+  fprintf os "    _buffer = (uint8_t*) %s(_total_buffer_size);\n" alloc_func;
   fprintf os "    _input_buffer = _buffer;\n";
   fprintf os "    _output_buffer = _buffer + _input_buffer_size;\n";
   fprintf os "    if (_buffer == NULL) { \n";
@@ -512,7 +512,7 @@ let oe_gen_copy_outputs (os:out_channel) (fd: Ast.func_decl) =
   List.iter gen_free_buffer fd.Ast.plist;
   fprintf os "\n"  
   
-let oe_gen_call_enclave_function (os:out_channel) (fd: Ast.func_decl) =  
+let oe_gen_call_function (os:out_channel) (fd: Ast.func_decl) =  
   let params = List.map (fun (pt, decl) -> 
     sprintf "%spargs_in->%s" (get_cast_from_mem_expr (pt, decl))decl.Ast.identifier) fd.Ast.plist 
   in
@@ -521,11 +521,8 @@ let oe_gen_call_enclave_function (os:out_channel) (fd: Ast.func_decl) =
     | Ast.Void -> ""
     | _ -> "pargs_out->_retval = " in
   let call_str = ret_str ^ fd.Ast.fname ^ params_str in
-  fprintf os "    /* lfence after checks */\n";
-  fprintf os "    oe_lfence();\n\n";
-  fprintf os "    /* Call enclave function */\n";
+  fprintf os "    /* Call user function */\n";
   fprintf os "    %s;\n" call_str  
-  
 
 (* oe: Generate ecall function . *)
 let oe_gen_ecall_function (os:out_channel) (fd: Ast.func_decl) =  
@@ -536,7 +533,7 @@ let oe_gen_ecall_function (os:out_channel) (fd: Ast.func_decl) =
   fprintf os "{\n";
   
   (* Variable declarations *)
-  fprintf os "    oe_result_t result = OE_FAILURE;\n\n";
+  fprintf os "    oe_result_t _result = OE_FAILURE;\n\n";
   fprintf os "    /* Prepare parameters */\n";
   fprintf os "    %s_args_t* pargs_in = (%s_args_t*) input_buffer;\n" fd.Ast.fname fd.Ast.fname;
   fprintf os "    %s_args_t* pargs_out = (%s_args_t*) output_buffer;\n\n" fd.Ast.fname fd.Ast.fname;
@@ -560,8 +557,8 @@ let oe_gen_ecall_function (os:out_channel) (fd: Ast.func_decl) =
       if ptr_attr.Ast.pa_chkptr then
         let size = oe_get_param_size (ptype, decl, "pargs_in->") in
         match ptr_attr.Ast.pa_direction with
-        | Ast.PtrIn -> fprintf os "    OE_ECALL_SET_IN_POINTER(%s, %s);\n" decl.Ast.identifier size
-        | Ast.PtrInOut -> fprintf os "    OE_ECALL_SET_IN_OUT_POINTER(%s, %s);\n" decl.Ast.identifier size          
+        | Ast.PtrIn -> fprintf os "    OE_SET_IN_POINTER(%s, %s);\n" decl.Ast.identifier size
+        | Ast.PtrInOut -> fprintf os "    OE_SET_IN_OUT_POINTER(%s, %s);\n" decl.Ast.identifier size          
         | _ -> ()
       else ()
     | _ -> ()
@@ -576,8 +573,8 @@ let oe_gen_ecall_function (os:out_channel) (fd: Ast.func_decl) =
       if ptr_attr.Ast.pa_chkptr then
         let size = oe_get_param_size (ptype, decl, "pargs_in->") in
         match ptr_attr.Ast.pa_direction with
-        | Ast.PtrOut -> fprintf os "    OE_ECALL_SET_OUT_POINTER(%s, %s);\n" decl.Ast.identifier size
-        | Ast.PtrInOut -> fprintf os "    OE_ECALL_COPY_AND_SET_IN_OUT_POINTER(%s, %s);\n" decl.Ast.identifier size          
+        | Ast.PtrOut -> fprintf os "    OE_SET_OUT_POINTER(%s, %s);\n" decl.Ast.identifier size
+        | Ast.PtrInOut -> fprintf os "    OE_COPY_AND_SET_IN_OUT_POINTER(%s, %s);\n" decl.Ast.identifier size          
         | _ -> ()
       else ()
     | _ -> ()
@@ -585,17 +582,19 @@ let oe_gen_ecall_function (os:out_channel) (fd: Ast.func_decl) =
   fprintf os "\n";
 
   (* Call the enclave function *)
-  oe_gen_call_enclave_function os fd;
+  fprintf os "    /* lfence after checks */\n";
+  fprintf os "    oe_lfence();\n\n";  
+  oe_gen_call_function os fd;
 
   (* Mark call as success *)
   fprintf os "\n    /* Success. */\n";
-  fprintf os "    result = OE_OK; \n";
+  fprintf os "    _result = OE_OK; \n";
   fprintf os "    *output_bytes_written = output_buffer_offset;\n\n";
   fprintf os "done:\n";
 
   (* oe_gen_free_buffers os fd; *)
   fprintf os "    if (pargs_out && output_buffer_size >= sizeof(*pargs_out)) \n";
-  fprintf os "        pargs_out->_result = result;\n";
+  fprintf os "        pargs_out->_result = _result;\n";
   fprintf os "}\n\n"
   
 
@@ -676,76 +675,47 @@ let iter_ptr_params f params =
 
 (* Generate ocalls wrapper function *)
 let oe_gen_ocall_enclave_wrapper (os:out_channel) (fd:Ast.func_decl) =
-  fprintf os "%s\n{\n" (oe_gen_wrapper_prototype fd false);
-  fprintf os "    oe_result_t __result = OE_FAILURE;\n\n";
-  fprintf os "    /* Marshal arguments */ \n";
-  fprintf os "    %s_args_t __args, __host_args, *__p_host_args = NULL; \n" fd.Ast.fname;
-  fprintf os "    memset(&__args, 0, sizeof(__args)); \n";
-  fprintf os "    memset(&__host_args, 0, sizeof(__host_args)); \n";
-  fprintf os "    uint8_t* __host_buffer = NULL;\n";
-  fprintf os "    uint8_t* __host_ptr = NULL;\n";
-  fprintf os "    uint64_t __host_buffer_size = sizeof(__args);\n\n";
-  gen_fill_marshal_struct os fd "__args";
-  
-  fprintf os "    /* Update size of buffer to allocate in host. */\n";
-  iter_ptr_params (fun (ptype, decl, attr) ->
-    if attr.Ast.pa_chkptr then
-      fprintf os "    __host_buffer_size += %s; \n" (oe_get_param_size (ptype, decl, "__args."))
-  ) fd.Ast.plist;
-
-  fprintf os "\n    /* Allocate host buffer and copy inputs to host. */\n";
-  fprintf os "    __host_buffer = __host_ptr = (uint8_t*) oe_host_malloc(__host_buffer_size); \n";
-  fprintf os "    if (__host_buffer == 0) { \n";
-  fprintf os "        __result = OE_OUT_OF_MEMORY;\n";
-  fprintf os "        goto done;\n";
-  fprintf os "    }\n\n";
-  fprintf os "    /* Copy buffer fields to host. */\n";
-  iter_ptr_params ( fun (ptype, decl, attr) -> 
-    let varname = decl.Ast.identifier in 
-    if attr.Ast.pa_isstr && attr.Ast.pa_chkptr then 
-      fprintf os "    OE_COPY_TO_HOST(__args.%s, %s, __args.%s_len*sizeof(char));\n" varname varname varname
-    else if attr.Ast.pa_iswstr && attr.Ast.pa_chkptr then
-      fprintf os "    OE_COPY_TO_HOST(__args.%s, %s, __args.%s_len*sizeof(wchar_t));\n" varname varname varname
-    else if attr.Ast.pa_chkptr then
-      fprintf os "    OE_COPY_TO_HOST(__args.%s, %s, %s);\n" varname varname (oe_get_param_size (ptype, decl, "__args.") )
-  ) fd.Ast.plist;
-
-  fprintf os "\n    /* Copy args struct to host memory. */\n";
-  fprintf os "    __p_host_args = (%s_args_t*)__host_ptr;\n" fd.Ast.fname;
-  fprintf os "    *__p_host_args = __args;\n";
-
- (* Generate call to host *)
-  fprintf os "\n    /* Call host function */\n";
-  fprintf os "    if(oe_call_host_function(%s, __p_host_args, sizeof(*__p_host_args), NULL, 0, NULL) != OE_OK)\n" (get_function_id fd);
+  fprintf os "%s" (oe_gen_wrapper_prototype fd false);
+  fprintf os "\n";
+  fprintf os "{\n";
+  fprintf os "    oe_result_t _result = OE_FAILURE;\n\n";
+  fprintf os "    /* Marshaling struct */ \n";
+  fprintf os "    %s_args_t _args, *_pargs_in = NULL, *_pargs_out=NULL;\n\n" fd.Ast.fname;
+  fprintf os "    /* Marshaling buffer and sizes */ \n";
+  fprintf os "    size_t _input_buffer_size = 0;\n";
+  fprintf os "    size_t _output_buffer_size = 0;\n";
+  fprintf os "    size_t _total_buffer_size = 0;\n";  
+  fprintf os "    uint8_t* _buffer = NULL;\n";
+  fprintf os "    uint8_t* _input_buffer = NULL;\n";
+  fprintf os "    uint8_t* _output_buffer = NULL;\n";
+  fprintf os "    size_t _input_buffer_offset = 0;\n";
+  fprintf os "    size_t _output_buffer_offset = 0;\n";
+  fprintf os "    size_t _output_bytes_written = 0;\n\n";
+  fprintf os "    /* Fill marshaling struct */\n";
+  fprintf os "    memset(&_args, 0, sizeof(_args));\n";
+  gen_fill_marshal_struct os fd "_args";
+  oe_prepare_input_buffer os fd "oe_host_malloc";  
+  fprintf os "    /* Call enclave function */\n";
+  fprintf os "    if((_result = oe_call_host_function(\n";
+  fprintf os "                        %s,\n" (get_function_id fd);
+  fprintf os "                        _input_buffer, _input_buffer_size,\n";
+  fprintf os "                        _output_buffer, _output_buffer_size,\n";
+  fprintf os "                         &_output_bytes_written)) != OE_OK)\n";
   fprintf os "        goto done;\n\n";
-  fprintf os "    /* Copy args struct back to enclave memory to prevent TOCTOU issues. */ \n";
-  fprintf os "    __host_args = *(%s_args_t*) __p_host_args; \n" fd.Ast.fname;
-  fprintf os "    if ((__result = __host_args._result) != OE_OK)\n        goto done;\n\n";
-  fprintf os "    /* Copy buffer outputs to enclave memory. */\n";
-  iter_ptr_params (fun (ptype, decl, attr) ->
-    match attr.Ast.pa_direction with
-      | Ast.PtrOut | Ast.PtrInOut ->
-          let varname = decl.Ast.identifier in
-          let size = oe_get_param_size (ptype, decl, "__args.") in
-          if attr.Ast.pa_chkptr then
-            fprintf os "    OE_COPY_FROM_HOST(%s, __host_args.%s, %s);\n" varname varname size
-          else ();
-      | _ -> ()
-  ) fd.Ast.plist;
-  fprintf os "\n    /* successful ocall */\n";
-  if fd.Ast.rtype <> Ast.Void then fprintf os "    *_retval = __host_args._retval;\n";  
-  fprintf os "    __result = OE_OK;\n";
-  fprintf os "done:\n";  
-  fprintf os "    oe_host_free(__host_buffer);\n";
-  fprintf os "    return __result;\n";
-  fprintf os "}\n\n" 
+  oe_process_output_buffer os fd;
+  fprintf os "    _result = OE_OK;\n";   
+  fprintf os "done:    \n";  
+  fprintf os "    if (_buffer)\n";
+  fprintf os "        oe_host_free(_buffer);\n";
+  fprintf os "    return _result;\n";
+  fprintf os "}\n\n"    
 
 (*
  * Generate ocall function table and registration
  *)  
 let oe_gen_ocall_table (os:out_channel) (ec:enclave_content) =
   fprintf os "\n/*ocall function table*/\n";
-  fprintf os "static oe_ocall_func_t _%s_ocall_function_table[]= {\n" ec.enclave_name;
+  fprintf os "static oe_ocall_func_t __%s_ocall_function_table[]= {\n" ec.enclave_name;
   List.iter (fun fd ->
     fprintf os "    (oe_ocall_func_t) ocall_%s,\n" fd.Ast.uf_fdecl.fname
   )  ec.ufunc_decls;
@@ -754,18 +724,74 @@ let oe_gen_ocall_table (os:out_channel) (ec:enclave_content) =
 
 (* Generate ocalls wrapper function *)
 let oe_gen_ocall_host_wrapper (os:out_channel) (fd:Ast.func_decl) =
-  fprintf os "OE_OCALL void ocall_%s(%s_args_t* args)\n{\n" fd.Ast.fname fd.Ast.fname;
-  fprintf os "    /* Forward the call */ \n";
-  let params = List.map (fun (pt, decl) -> 
-    sprintf "%sargs->%s" (get_cast_from_mem_expr (pt,decl)) decl.Ast.identifier) fd.Ast.plist 
-  in
-  let call_expr = sprintf "%s(%s)" fd.Ast.fname (String.concat ", " params) in
-  if fd.Ast.rtype = Ast.Void then
-    fprintf os "    %s;\n" call_expr
-  else 
-    fprintf os "    args->_retval = %s;\n" call_expr;
-  fprintf os "}\n\n"
+  fprintf os "void ocall_%s(\n" fd.Ast.fname;
+  fprintf os "        uint8_t* input_buffer, size_t input_buffer_size,\n";
+  fprintf os "        uint8_t* output_buffer, size_t output_buffer_size,\n";
+  fprintf os "        size_t* output_bytes_written)\n";
+  (* Variable declarations *)
+  fprintf os "{\n";
+  fprintf os "    oe_result_t _result = OE_FAILURE;\n\n";
+  fprintf os "    /* Prepare parameters */\n";
+  fprintf os "    %s_args_t* pargs_in = (%s_args_t*) input_buffer;\n" fd.Ast.fname fd.Ast.fname;
+  fprintf os "    %s_args_t* pargs_out = (%s_args_t*) output_buffer;\n\n" fd.Ast.fname fd.Ast.fname;
+  fprintf os "    size_t input_buffer_offset = 0;\n";
+  fprintf os "    size_t output_buffer_offset = 0;\n";
+  fprintf os "    OE_ADD_SIZE(input_buffer_offset, sizeof(*pargs_in));\n";
+  fprintf os "    OE_ADD_SIZE(output_buffer_offset, sizeof(*pargs_out));\n\n";
 
+  (* Buffer validation *)
+  fprintf os "    /* Make sure input and output buffers are valid */\n";
+  fprintf os "    if (!input_buffer || !output_buffer) {\n";
+  fprintf os "        _result = OE_INVALID_PARAMETER;\n";
+  fprintf os "        goto done;\n\n";
+  fprintf os "    }\n";
+  
+  (* Prepare in and in-out parameters *)
+  fprintf os "    /* Set in and in-out pointers */\n";
+  List.iter (fun (ptype, decl) ->
+    match ptype with
+    | Ast.PTPtr (atype, ptr_attr) ->
+      if ptr_attr.Ast.pa_chkptr then
+        let size = oe_get_param_size (ptype, decl, "pargs_in->") in
+        match ptr_attr.Ast.pa_direction with
+        | Ast.PtrIn -> fprintf os "    OE_SET_IN_POINTER(%s, %s);\n" decl.Ast.identifier size
+        | Ast.PtrInOut -> fprintf os "    OE_SET_IN_OUT_POINTER(%s, %s);\n" decl.Ast.identifier size          
+        | _ -> ()
+      else ()
+    | _ -> ()
+  ) fd.Ast.plist;   
+  fprintf os "\n";
+
+  (* Prepare out and in-out parameters. The in-out parameter is copied to output buffer. *)
+  fprintf os "    /* Set out and in-out pointers. In-out parameters are copied to output buffer. */\n";
+  List.iter (fun (ptype, decl) ->
+    match ptype with
+    | Ast.PTPtr (atype, ptr_attr) ->
+      if ptr_attr.Ast.pa_chkptr then
+        let size = oe_get_param_size (ptype, decl, "pargs_in->") in
+        match ptr_attr.Ast.pa_direction with
+        | Ast.PtrOut -> fprintf os "    OE_SET_OUT_POINTER(%s, %s);\n" decl.Ast.identifier size
+        | Ast.PtrInOut -> fprintf os "    OE_COPY_AND_SET_IN_OUT_POINTER(%s, %s);\n" decl.Ast.identifier size          
+        | _ -> ()
+      else ()
+    | _ -> ()
+  ) fd.Ast.plist;
+  fprintf os "\n";
+  
+  (* Call the host function *)
+  oe_gen_call_function os fd;
+
+  (* Mark call as success *)
+  fprintf os "\n    /* Success. */\n";
+  fprintf os "    _result = OE_OK; \n";
+  fprintf os "    *output_bytes_written = output_buffer_offset;\n\n";
+  fprintf os "done:\n";
+
+  (* oe_gen_free_buffers os fd; *)
+  fprintf os "    if (pargs_out && output_buffer_size >= sizeof(*pargs_out)) \n";
+  fprintf os "        pargs_out->_result = _result;\n";
+  fprintf os "}\n\n"
+  
 let rec is_wchar_t_type = function
 | Ast.WChar -> true
 | Ptr ty -> is_wchar_t_type ty
@@ -863,8 +889,14 @@ let oe_emit_create_enclave_defn (os:out_channel)  (ec:enclave_content) =
   fprintf os "                                 uint32_t config_size,\n";
   fprintf os "                                 oe_enclave_t** enclave)\n";
   fprintf os "{\n";
-  fprintf os "    return oe_create_enclave(path, type, flags, config, config_size,_%s_ocall_function_table, %d, enclave);\n"
-                ec.enclave_name (List.length ec.ufunc_decls);
+  fprintf os "    return oe_create_enclave(path,\n";
+  fprintf os "               type,\n";
+  fprintf os "               flags,\n";
+  fprintf os "               config,\n";
+  fprintf os "               config_size,\n";
+  fprintf os "               __%s_ocall_function_table,\n" ec.enclave_name;
+  fprintf os "               %d,\n" (List.length ec.ufunc_decls);
+  fprintf os "               enclave);\n";
   fprintf os "}\n\n"
 
 
