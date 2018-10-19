@@ -61,7 +61,7 @@ typedef void (*oe_ocall_func_t)(
     size_t input_buffer_size,
     uint8_t* output_buffer,
     size_t output_buffer_size,
-    size_t* output_bytes_writter);
+    size_t* output_bytes_written);
 
 /**
  * Create an enclave from an enclave image file.

@@ -32,7 +32,7 @@ typedef void (*oe_ecall_func_t)(
     size_t input_buffer_size,
     uint8_t* output_buffer,
     size_t output_buffer_size,
-    size_t* output_bytes_writter);
+    size_t* output_bytes_written);
 
 /**
  * Perform a high-level host function call (OCALL).

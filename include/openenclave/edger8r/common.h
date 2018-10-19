@@ -22,8 +22,6 @@ OE_EXTERNC_BEGIN
 /********* Macros and inline functions used by generated code *****************/
 /******************************************************************************/
 
-#define OE_MAX(a, b) ((a) > (b) ? (a) : (b))
-
 /**
  * Each pointer/array parameter's sub-buffer in the input/output buffer will
  * be aligned to this value.
