@@ -22,13 +22,27 @@ OE_EXTERNC_BEGIN
 /********* Macros and inline functions used by generated code *****************/
 /******************************************************************************/
 
+#define OE_MAX(a, b) ((a) > (b) ? (a) : (b))
+
+/**
+ * Each pointer/array parameter's sub-buffer in the input/output buffer will
+ * be aligned to this value.
+ * This alignment value must be consistent with alignment guarantees provided
+ * by malloc - i.e aligned to store any standard C type.
+ * In theory, this is the alignment that works for void* and the largest
+ * types long long and long double.
+ * 2* sizeof(void*) is the default value used by malloc libraries like dlmalloc.
+ */
+
+#define OE_EDGER8R_BUFFER_ALIGNMENT (2 * sizeof(void*))
+
 /**
  * Add a size value, rounding to sizeof(void*).
  */
 OE_INLINE oe_result_t oe_add_size(size_t* total, size_t size)
 {
     oe_result_t result = OE_FAILURE;
-    size_t align = sizeof(void*);
+    size_t align = OE_EDGER8R_BUFFER_ALIGNMENT;
     size_t sum = 0;
 
     // Round size to multiple of sizeof(void*)
@@ -116,7 +130,9 @@ done:
             goto done;                                                         \
         }                                                                      \
         memcpy(                                                                \
-            output_buffer + output_buffer_offset, pargs_in->argname, argsize); \
+            (void*)(output_buffer + output_buffer_offset),                     \
+            pargs_in->argname,                                                 \
+            argsize);                                                          \
         *(uint8_t**)&pargs_in->argname = output_buffer + output_buffer_offset; \
         OE_ADD_SIZE(output_buffer_offset, (size_t)argsize);                    \
     }
@@ -128,7 +144,7 @@ done:
     if (argname)                                                           \
     {                                                                      \
         *(uint8_t**)&_args.argname = _input_buffer + _input_buffer_offset; \
-        memcpy(_args.argname, argname, (size_t)(size));                    \
+        memcpy((void*)_args.argname, argname, (size_t)(size));             \
         OE_ADD_SIZE(_input_buffer_offset, (size_t)(size));                 \
     }
 
@@ -137,12 +153,14 @@ done:
 /**
  * Read an output parameter from output buffer.
  */
-#define OE_READ_OUT_PARAM(argname, size)                                      \
-    if (argname)                                                              \
-    {                                                                         \
-        memcpy(                                                               \
-            argname, _output_buffer + _output_buffer_offset, (size_t)(size)); \
-        OE_ADD_SIZE(_output_buffer_offset, (size_t)(size));                   \
+#define OE_READ_OUT_PARAM(argname, size)                    \
+    if (argname)                                            \
+    {                                                       \
+        memcpy(                                             \
+            (void*)argname,                                 \
+            _output_buffer + _output_buffer_offset,         \
+            (size_t)(size));                                \
+        OE_ADD_SIZE(_output_buffer_offset, (size_t)(size)); \
     }
 
 #define OE_READ_IN_OUT_PARAM OE_READ_OUT_PARAM

@@ -268,7 +268,8 @@ static oe_result_t _handle_call_enclave_function(uint64_t arg_in)
     size_t output_bytes_written = 0;
 
     // Ensure that args lies outside the enclave.
-    if (!oe_is_outside_enclave((void*)arg_in, sizeof(oe_call_enclave_args_t)))
+    if (!oe_is_outside_enclave(
+            (void*)arg_in, sizeof(oe_call_enclave_function_args_t)))
         OE_RAISE(OE_INVALID_PARAMETER);
 
     // Copy args to enclave memory to avoid TOCTOU issues.
@@ -293,7 +294,10 @@ static oe_result_t _handle_call_enclave_function(uint64_t arg_in)
             args.input_buffer_size, args.output_buffer_size, &buffer_size));
 
     // Buffer sizes must be pointer aligned.
-    if (buffer_size % sizeof(void*) != 0)
+    if ((args.input_buffer_size % OE_EDGER8R_BUFFER_ALIGNMENT) != 0)
+        OE_RAISE(OE_INVALID_PARAMETER);
+
+    if ((args.output_buffer_size % OE_EDGER8R_BUFFER_ALIGNMENT) != 0)
         OE_RAISE(OE_INVALID_PARAMETER);
 
     // Allocate buffers in enclave memory

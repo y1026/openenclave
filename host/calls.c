@@ -375,7 +375,10 @@ static oe_result_t _handle_call_host_function(
             &buffer_size));
 
     // Buffer sizes must be pointer aligned.
-    if (buffer_size % sizeof(void*) != 0)
+    if ((args_ptr->input_buffer_size % OE_EDGER8R_BUFFER_ALIGNMENT) != 0)
+        OE_RAISE(OE_INVALID_PARAMETER);
+
+    if ((args_ptr->output_buffer_size % OE_EDGER8R_BUFFER_ALIGNMENT) != 0)
         OE_RAISE(OE_INVALID_PARAMETER);
 
     // Call the function.
