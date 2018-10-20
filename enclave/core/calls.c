@@ -276,9 +276,27 @@ static oe_result_t _handle_call_enclave_function(uint64_t arg_in)
     args_ptr = (oe_call_enclave_function_args_t*)arg_in;
     args = *args_ptr;
 
-    // Input and output buffers must not be NULL.
-    if (args.input_buffer == NULL || args.output_buffer == NULL)
+    // Ensure that input buffer is valid.
+    if (args.input_buffer == NULL || args.input_buffer_size == 0 ||
+        !oe_is_outside_enclave(args.input_buffer, args.input_buffer_size))
         OE_RAISE(OE_INVALID_PARAMETER);
+
+    // Ensure that output buffer is valid.
+    if (args.output_buffer == NULL || args.output_buffer_size == 0 ||
+        !oe_is_outside_enclave(args.output_buffer, args.output_buffer_size))
+        OE_RAISE(OE_INVALID_PARAMETER);
+
+    // Validate output and input buffer sizes.
+    // Buffer sizes must be correctly aligned.
+    if ((args.input_buffer_size % OE_EDGER8R_BUFFER_ALIGNMENT) != 0)
+        OE_RAISE(OE_INVALID_PARAMETER);
+
+    if ((args.output_buffer_size % OE_EDGER8R_BUFFER_ALIGNMENT) != 0)
+        OE_RAISE(OE_INVALID_PARAMETER);
+
+    OE_CHECK(
+        oe_safe_add_u64(
+            args.input_buffer_size, args.output_buffer_size, &buffer_size));
 
     // Fetch matching function.
     if (args.function_id >= __oe_ecalls_table_size)
@@ -288,17 +306,6 @@ static oe_result_t _handle_call_enclave_function(uint64_t arg_in)
 
     if (func == NULL)
         OE_RAISE(OE_NOT_FOUND);
-
-    OE_CHECK(
-        oe_safe_add_u64(
-            args.input_buffer_size, args.output_buffer_size, &buffer_size));
-
-    // Buffer sizes must be pointer aligned.
-    if ((args.input_buffer_size % OE_EDGER8R_BUFFER_ALIGNMENT) != 0)
-        OE_RAISE(OE_INVALID_PARAMETER);
-
-    if ((args.output_buffer_size % OE_EDGER8R_BUFFER_ALIGNMENT) != 0)
-        OE_RAISE(OE_INVALID_PARAMETER);
 
     // Allocate buffers in enclave memory
     buffer = input_buffer = oe_malloc(buffer_size);
